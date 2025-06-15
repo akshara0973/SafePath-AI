@@ -1,85 +1,136 @@
-// /components/SafeRouteMap.js
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+// import carImage from './car.jpg';
+import carImage from '../assets/car.jpg'; // adjust path based on where SafeRouteMap.jsx is
 
-const unsafeZones = [
-  [28.6139, 77.2090], // CP
-  [28.7041, 77.1025], // West Delhi
+
+// Load car icon
+const carIcon = new L.Icon({
+  iconUrl: carImage,
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+});
+
+// Dummy unsafe locations in Delhi (lat, lng)
+const unsafeLocations = [
+  [28.644800, 77.216721], // CP
+  [28.704060, 77.102493], // Karol Bagh
+  [28.535517, 77.391029], // Noida border
 ];
 
-const SafeRouteMap = () => {
-  const [source, setSource] = useState('');
-  const [destination, setDestination] = useState('');
-  const [route, setRoute] = useState([]);
-
-  // Delhi location search options (basic simulation)
-  const locations = {
-    'India Gate': [28.6129, 77.2295],
-    'Connaught Place': [28.6315, 77.2167],
-    'Karol Bagh': [28.6517, 77.1905],
-    'Dwarka': [28.5921, 77.0460],
-    'Janakpuri': [28.6218, 77.0897],
-  };
-
-  const handleRoute = () => {
-    if (!locations[source] || !locations[destination]) {
-      alert('Please select valid Delhi locations!');
-      return;
-    }
-
-    const routePath = [locations[source], locations[destination]];
-    setRoute(routePath);
-
-    // Check unsafe zones
-    routePath.forEach((point) => {
-      unsafeZones.forEach((uz) => {
-        const dist = L.latLng(point).distanceTo(L.latLng(uz));
-        if (dist < 300) {
-          new Audio('/beep.mp3').play();
-          alert('⚠️ Warning: Unsafe zone near route!');
-        }
-      });
-    });
-  };
-
-  return (
-    <div>
-      <div style={{ margin: '1rem' }}>
-        <label>Source: </label>
-        <select value={source} onChange={(e) => setSource(e.target.value)}>
-          <option value="">--Select--</option>
-          {Object.keys(locations).map((loc, idx) => (
-            <option key={idx} value={loc}>{loc}</option>
-          ))}
-        </select>
-
-        <label style={{ marginLeft: '1rem' }}>Destination: </label>
-        <select value={destination} onChange={(e) => setDestination(e.target.value)}>
-          <option value="">--Select--</option>
-          {Object.keys(locations).map((loc, idx) => (
-            <option key={idx} value={loc}>{loc}</option>
-          ))}
-        </select>
-
-        <button onClick={handleRoute} style={{ marginLeft: '1rem' }}>
-          Show Route
-        </button>
-      </div>
-
-      <MapContainer center={[28.6139, 77.2090]} zoom={12} style={{ height: '80vh', width: '100%' }}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {unsafeZones.map((pos, i) => (
-          <Marker key={`uz-${i}`} position={pos}></Marker>
-        ))}
-        {route.map((pos, i) => (
-          <Marker key={`r-${i}`} position={pos}></Marker>
-        ))}
-        {route.length === 2 && <Polyline positions={route} color="blue" />}
-      </MapContainer>
-    </div>
+// Helper to check if near unsafe zone
+const isNearUnsafe = (position) => {
+  const threshold = 0.003; // ~300m radius
+  return unsafeLocations.some(
+    ([lat, lng]) =>
+      Math.abs(lat - position[0]) < threshold &&
+      Math.abs(lng - position[1]) < threshold
   );
 };
 
-export default SafeRouteMap;
+// Auto zoom
+function MapUpdater({ route }) {
+  const map = useMap();
+  useEffect(() => {
+    if (route.length === 2) {
+      map.fitBounds(route);
+    }
+  }, [route, map]);
+  return null;
+}
+
+export default function SafeRouteMap() {
+  const [source, setSource] = useState('');
+  const [destination, setDestination] = useState('');
+  const [route, setRoute] = useState([]);
+  const [carPosition, setCarPosition] = useState(null);
+
+  // Beep sound
+  const beep = () => {
+    const audio = new Audio('/beep.mp3');
+    audio.play();
+  };
+
+  const handleRoute = () => {
+    // Dummy coordinates for testing (Delhi)
+    const locations = {
+      cp: [28.644800, 77.216721],
+      karolbagh: [28.651952, 77.190374],
+      rajiv: [28.6330, 77.2197],
+      noida: [28.535517, 77.391029],
+      aiims: [28.5672, 77.2100],
+    };
+
+    const srcCoord = locations[source.toLowerCase()];
+    const destCoord = locations[destination.toLowerCase()];
+
+    if (srcCoord && destCoord) {
+      setRoute([srcCoord, destCoord]);
+    } else {
+      alert('Enter valid Delhi locations (cp, karolbagh, rajiv, noida, aiims)');
+    }
+  };
+
+  useEffect(() => {
+    if (route.length === 2) {
+      const steps = 100;
+      const interval = 200;
+      const [start, end] = route;
+
+      const latDiff = (end[0] - start[0]) / steps;
+      const lngDiff = (end[1] - start[1]) / steps;
+
+      let i = 0;
+      const id = setInterval(() => {
+        const nextPos = [start[0] + latDiff * i, start[1] + lngDiff * i];
+        setCarPosition(nextPos);
+        if (isNearUnsafe(nextPos)) {
+          beep();
+        }
+        i++;
+        if (i > steps) clearInterval(id);
+      }, interval);
+
+      return () => clearInterval(id);
+    }
+  }, [route]);
+
+  return (
+    <div>
+      <div style={{ marginBottom: '10px' }}>
+        <input
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          placeholder="Enter source (e.g. CP)"
+        />
+        <input
+          value={destination}
+          onChange={(e) => setDestination(e.target.value)}
+          placeholder="Enter destination (e.g. Noida)"
+        />
+        <button onClick={handleRoute}>Show Route</button>
+      </div>
+
+      <MapContainer center={[28.644800, 77.216721]} zoom={12} style={{ height: '500px', width: '100%' }}>
+        <TileLayer
+          url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        />
+        {route.length === 2 && (
+          <>
+            <MapUpdater route={route} />
+            <Marker position={route[1]} />
+            <Polyline positions={route} color="blue" />
+            {carPosition && <Marker position={carPosition} icon={carIcon} />}
+          </>
+        )}
+        {unsafeLocations.map((pos, idx) => (
+          <Marker key={idx} position={pos}>
+            {/* Optionally add popup for unsafe area */}
+          </Marker>
+        ))}
+      </MapContainer>
+    </div>
+  );
+}

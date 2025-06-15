@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^6.7.2",
     "@react-google-maps/api": "^2.20.6",
     "@turf/turf": "^7.2.0",
     "axios": "^1.10.0",
