@@ -44,7 +44,7 @@ const GetRoute = async (start, end) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'YOUR_API_KEY_HERE'  // 👈 Make sure this is correctly set
+        'Authorization': '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'  // 👈 Make sure this is correctly set
       },
       body: JSON.stringify({
         coordinates: [[start[1], start[0]], [end[1], end[0]]],
