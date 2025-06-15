@@ -1,11 +1,11 @@
-// src/App.js
+// App.js
 import React from 'react';
 import SafeRouteMap from './components/SafeRouteMap';
 
 function App() {
   return (
     <div>
-      <h2>SafeRouteAI (Delhi)</h2>
+      <h2 style={{ textAlign: 'center' }}>SafeRouteAI — Delhi Only</h2>
       <SafeRouteMap />
     </div>
   );
