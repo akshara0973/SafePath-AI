@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-// import carImage from './car.jpg';
-import carImage from '../assets/car.jpg'; // adjust path based on where SafeRouteMap.jsx is
-
+import carImage from '../assets/car.jpg'; // adjust path as needed
 
 // Load car icon
 const carIcon = new L.Icon({
@@ -13,16 +11,16 @@ const carIcon = new L.Icon({
   iconAnchor: [20, 40],
 });
 
-// Dummy unsafe locations in Delhi (lat, lng)
+// Dummy unsafe locations in Delhi
 const unsafeLocations = [
   [28.644800, 77.216721], // CP
   [28.704060, 77.102493], // Karol Bagh
   [28.535517, 77.391029], // Noida border
 ];
 
-// Helper to check if near unsafe zone
+// Check if near unsafe location
 const isNearUnsafe = (position) => {
-  const threshold = 0.003; // ~300m radius
+  const threshold = 0.003; // ~300 meters
   return unsafeLocations.some(
     ([lat, lng]) =>
       Math.abs(lat - position[0]) < threshold &&
@@ -30,7 +28,7 @@ const isNearUnsafe = (position) => {
   );
 };
 
-// Auto zoom
+// Auto-fit route
 function MapUpdater({ route }) {
   const map = useMap();
   useEffect(() => {
@@ -46,15 +44,9 @@ export default function SafeRouteMap() {
   const [destination, setDestination] = useState('');
   const [route, setRoute] = useState([]);
   const [carPosition, setCarPosition] = useState(null);
-
-  // Beep sound
-  const beep = () => {
-    const audio = new Audio('/beep.mp3');
-    audio.play();
-  };
+  const [showAlert, setShowAlert] = useState(false);
 
   const handleRoute = () => {
-    // Dummy coordinates for testing (Delhi)
     const locations = {
       cp: [28.644800, 77.216721],
       karolbagh: [28.651952, 77.190374],
@@ -86,9 +78,12 @@ export default function SafeRouteMap() {
       const id = setInterval(() => {
         const nextPos = [start[0] + latDiff * i, start[1] + lngDiff * i];
         setCarPosition(nextPos);
+
         if (isNearUnsafe(nextPos)) {
-          beep();
+          setShowAlert(true);
+          setTimeout(() => setShowAlert(false), 5000); // alert disappears after 5s
         }
+
         i++;
         if (i > steps) clearInterval(id);
       }, interval);
@@ -98,7 +93,7 @@ export default function SafeRouteMap() {
   }, [route]);
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
       <div style={{ marginBottom: '10px' }}>
         <input
           value={source}
@@ -113,10 +108,27 @@ export default function SafeRouteMap() {
         <button onClick={handleRoute}>Show Route</button>
       </div>
 
+      {showAlert && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#e53935',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          zIndex: 999,
+          fontWeight: 'bold',
+          fontSize: '16px',
+          boxShadow: '0 0 10px rgba(0,0,0,0.3)'
+        }}>
+          🚨 Warning: You are in an Unsafe Zone!
+        </div>
+      )}
+
       <MapContainer center={[28.644800, 77.216721]} zoom={12} style={{ height: '500px', width: '100%' }}>
-        <TileLayer
-          url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-        />
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {route.length === 2 && (
           <>
             <MapUpdater route={route} />
@@ -126,9 +138,7 @@ export default function SafeRouteMap() {
           </>
         )}
         {unsafeLocations.map((pos, idx) => (
-          <Marker key={idx} position={pos}>
-            {/* Optionally add popup for unsafe area */}
-          </Marker>
+          <Marker key={idx} position={pos} />
         ))}
       </MapContainer>
     </div>
