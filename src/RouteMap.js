@@ -35,20 +35,40 @@ const useCurrentLocation = (setPosition) => {
 };
 
 const GetRoute = async (start, end) => {
-  const avoidPoints = redZones.map(([lat, lon]) => `${lon},${lat}`).join('|');
-  const res = await fetch(`https://api.openrouteservice.org/v2/directions/foot-walking?api_key=5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      coordinates: [[start[1], start[0]], [end[1], end[0]]],
-      avoid_polygons: turf.buffer(turf.featureCollection(
-        redZones.map(([lat, lon]) => turf.point([lon, lat]))
-      ), 0.005, { units: 'kilometers' })
-    })
-  });
-  const data = await res.json();
-  return data.features[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  try {
+    const avoidPolygon = turf.buffer(turf.featureCollection(
+      redZones.map(([lat, lon]) => turf.point([lon, lat]))
+    ), 0.005, { units: 'kilometers' });
+
+    const res = await fetch(`https://api.openrouteservice.org/v2/directions/foot-walking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'YOUR_API_KEY_HERE'  // 👈 Make sure this is correctly set
+      },
+      body: JSON.stringify({
+        coordinates: [[start[1], start[0]], [end[1], end[0]]],
+        options: {
+          avoid_polygons: avoidPolygon
+        }
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.features || !data.features[0]) {
+      throw new Error("No route found. Check coordinates or API limits.");
+    }
+
+    return data.features[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+
+  } catch (error) {
+    console.error("Error fetching route:", error);
+    alert("Unable to fetch route. Try again with valid inputs.");
+    return [];
+  }
 };
+
 
 function SafeRouteMap() {
   const [start, setStart] = useState('');
