@@ -1,10 +1,11 @@
-import React from "react";
-import SafeRouteMap from "./components/SafeRouteMap";
+// src/App.js
+import React from 'react';
+import SafeRouteMap from './components/SafeRouteMap';
 
 function App() {
   return (
     <div>
-      <h1>SafeRouteAI (Delhi)</h1>
+      <h2>SafeRouteAI (Delhi)</h2>
       <SafeRouteMap />
     </div>
   );
