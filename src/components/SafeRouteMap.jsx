@@ -9,30 +9,29 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import carImage from '../assets/car.jpg';
+import carImage from '../assets/car.jpg'; // Make sure this path is correct
 
+// 🚗 Car icon
 const carIcon = new L.Icon({
   iconUrl: carImage,
   iconSize: [40, 40],
   iconAnchor: [20, 40],
 });
 
-// 🔴 Define unsafe zones
+// 🛑 Unsafe zone: Mandi House
 const unsafeZones = [
-  [28.644800, 77.216721], // CP
-  [28.704060, 77.102493], // Karol Bagh
-  [28.535517, 77.391029], // Noida border
+  [28.6281, 77.2335], // Mandi House
 ];
 
-// 🛑 Check if location is near unsafe
+// 🔍 Check if car is near unsafe zone
 const isNearUnsafe = ([lat, lng]) => {
-  const threshold = 0.005;
+  const threshold = 0.003; // ~300 meters
   return unsafeZones.some(([ul, ulng]) => (
     Math.abs(lat - ul) < threshold && Math.abs(lng - ulng) < threshold
   ));
 };
 
-// Update map bounds
+// 🎯 Adjust map view dynamically
 function MapUpdater({ route }) {
   const map = useMap();
   useEffect(() => {
@@ -43,13 +42,13 @@ function MapUpdater({ route }) {
   return null;
 }
 
-// 🔊 Beep sound on unsafe zone detection
+// 🔊 Beep on unsafe zone detection
 const beep = () => {
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const oscillator = audioCtx.createOscillator();
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
-  oscillator.connect(audioCtx.destination);
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = ctx.createOscillator();
+  oscillator.type = 'square';
+  oscillator.frequency.setValueAtTime(1200, ctx.currentTime);
+  oscillator.connect(ctx.destination);
   oscillator.start();
   setTimeout(() => oscillator.stop(), 300);
 };
@@ -61,69 +60,69 @@ export default function SafeRouteMap() {
   const [carPosition, setCarPosition] = useState(null);
   const [showAlert, setShowAlert] = useState(false);
 
-  const apiKey = '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'; // 🔑 Paste your key here
+  const apiKey = '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'; // Replace with your ORS key
 
-  // 📍 Get coordinates from place name
+  // 🔄 Convert place name to coordinates
   const getCoords = async (place) => {
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${place}, Delhi`);
-    const data = await response.json();
-    if (data[0]) {
-      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${place}, Delhi`);
+      const data = await res.json();
+      return data[0] ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;
+    } catch (err) {
+      console.error("Error fetching coordinates:", err);
+      return null;
     }
-    return null;
   };
 
-  // 📦 Get route from OpenRouteService
+  // 🛣️ Fetch and display route
   const handleRoute = async () => {
-    const srcCoord = await getCoords(source);
-    const destCoord = await getCoords(destination);
-
-    if (!srcCoord || !destCoord) {
-      alert('Please enter valid Delhi locations');
-      return;
-    }
+    const src = await getCoords(source);
+    const dest = await getCoords(destination);
+    if (!src || !dest) return alert("❌ Invalid source or destination");
 
     const body = {
-      coordinates: [[srcCoord[1], srcCoord[0]], [destCoord[1], destCoord[0]]],
+      coordinates: [[src[1], src[0]], [dest[1], dest[0]]],
       format: 'geojson'
     };
 
-    const response = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
-      method: 'POST',
-      headers: {
-        'Authorization': apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
+    try {
+      const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+        method: 'POST',
+        headers: {
+          'Authorization': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-    const data = await response.json();
-
-    if (data.features?.[0]) {
-      const coords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-      setRoute(coords);
-    } else {
-      alert('Could not fetch route');
+      const data = await res.json();
+      if (data.features?.[0]) {
+        const coords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        setRoute(coords);
+        setCarPosition(null); // reset car
+      } else {
+        alert("❌ No route found.");
+      }
+    } catch (err) {
+      console.error("Error fetching route:", err);
     }
   };
 
-  // 🚗 Animate car movement
+  // 🚘 Animate car on the route
   useEffect(() => {
     if (route.length >= 2) {
-      const steps = route.length;
       let i = 0;
-
       const intervalId = setInterval(() => {
-        if (i < steps) {
-          const pos = route[i];
-          setCarPosition(pos);
+        if (i < route.length) {
+          const currentPos = route[i];
+          setCarPosition(currentPos);
 
-          if (isNearUnsafe(pos)) {
+          if (isNearUnsafe(currentPos)) {
             beep();
             setShowAlert(true);
             rerouteAvoidingUnsafe(route[0], route[route.length - 1]);
             clearInterval(intervalId);
-            setTimeout(() => setShowAlert(false), 5000);
+            setTimeout(() => setShowAlert(false), 4000);
           }
 
           i++;
@@ -136,7 +135,7 @@ export default function SafeRouteMap() {
     }
   }, [route]);
 
-  // 🔁 Reroute avoiding unsafe zone
+  // 🔁 Avoid unsafe zones by rerouting
   const rerouteAvoidingUnsafe = async (start, end) => {
     const avoidPolygons = {
       type: "MultiPolygon",
@@ -145,7 +144,7 @@ export default function SafeRouteMap() {
         [lng + 0.003, lat - 0.003],
         [lng + 0.003, lat + 0.003],
         [lng - 0.003, lat + 0.003],
-        [lng - 0.003, lat - 0.003]
+        [lng - 0.003, lat - 0.003],
       ]])
     };
 
@@ -155,29 +154,32 @@ export default function SafeRouteMap() {
       format: 'geojson'
     };
 
-    const response = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
-      method: 'POST',
-      headers: {
-        'Authorization': apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
+    try {
+      const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+        method: 'POST',
+        headers: {
+          'Authorization': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-    const data = await response.json();
-
-    if (data.features?.[0]) {
-      const newCoords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-      setRoute(newCoords);
-    } else {
-      alert('Failed to reroute avoiding unsafe zones.');
+      const data = await res.json();
+      if (data.features?.[0]) {
+        const newCoords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        setRoute(newCoords);
+      } else {
+        alert('❌ Reroute failed');
+      }
+    } catch (err) {
+      console.error("Error during reroute:", err);
     }
   };
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* 🔍 Inputs */}
-      <div style={{ marginBottom: '10px' }}>
+      {/* 🔍 Search Bar */}
+      <div style={{ marginBottom: 10 }}>
         <input
           value={source}
           onChange={(e) => setSource(e.target.value)}
@@ -191,42 +193,40 @@ export default function SafeRouteMap() {
         <button onClick={handleRoute}>Show Route</button>
       </div>
 
-      {/* 🚨 Alert */}
+      {/* 🚨 Alert Popup */}
       {showAlert && (
         <div style={{
           position: 'absolute',
-          top: '10px',
+          top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
-          backgroundColor: '#e53935',
+          backgroundColor: '#d32f2f',
           color: '#fff',
-          padding: '12px 20px',
-          borderRadius: '8px',
-          zIndex: 999,
+          padding: '10px 20px',
+          borderRadius: '6px',
           fontWeight: 'bold',
-          fontSize: '16px',
-          boxShadow: '0 0 10px rgba(0,0,0,0.3)'
+          zIndex: 999
         }}>
-          🚨 Unsafe Zone Detected! Rerouting...
+          🚨 Unsafe Zone Detected near Mandi House! Rerouting...
         </div>
       )}
 
       {/* 🗺️ Map */}
-      <MapContainer center={[28.61, 77.23]} zoom={11} style={{ height: '500px', width: '100%' }}>
+      <MapContainer center={[28.61, 77.23]} zoom={13} style={{ height: '500px', width: '100%' }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapUpdater route={route} />
 
-        {/* ❌ Unsafe zones */}
-        {unsafeZones.map((pos, idx) => (
+        {/* 🔴 Unsafe Zone Circle */}
+        {unsafeZones.map((pos, i) => (
           <Circle
-            key={idx}
+            key={i}
             center={pos}
             radius={400}
-            pathOptions={{ color: 'red', fillColor: '#f03', fillOpacity: 0.4 }}
+            pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.3 }}
           />
         ))}
 
-        {/* 🔷 Route & car */}
+        {/* 🔵 Route & 🚗 Car Marker */}
         {route.length >= 2 && (
           <>
             <Polyline positions={route} color="blue" />
