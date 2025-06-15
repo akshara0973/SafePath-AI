@@ -1,13 +1,11 @@
 import React from "react";
-import RouteMap from "./RouteMap";
-import "leaflet/dist/leaflet.css";
-
+import SafeRouteMap from "./components/SafeRouteMap";
 
 function App() {
   return (
     <div>
-      <h1>Shahdara to Rithala Route</h1>
-      <RouteMap />
+      <h1>SafeRouteAI (Delhi)</h1>
+      <SafeRouteMap />
     </div>
   );
 }

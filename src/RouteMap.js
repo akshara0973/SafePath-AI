@@ -1,82 +1,95 @@
-// SafeRouteMap.js
-
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
+import Papa from 'papaparse';
 
-const redIcon = new L.Icon({
-  iconUrl: 'red.jpg',
-  iconSize: [25, 25],
-  iconAnchor: [12, 25],
-});
+// Optionally add a red triangle icon (if using visuals temporarily)
+// import redIcon from './red-triangle.png'; // keep only if you want the image icon
+// const redLeafletIcon = new L.Icon({ iconUrl: redIcon, iconSize: [25, 25], iconAnchor: [12, 25] });
 
 const centerDelhi = [28.6139, 77.2090];
-const redZones = [
-  [28.6600, 77.2320], // Example unsafe zones
-  [28.6500, 77.2500],
-  [28.6400, 77.2000],
-];
-
-const useCurrentLocation = (setPosition) => {
-  useEffect(() => {
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setPosition([latitude, longitude]);
-      },
-      (err) => console.error(err),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [setPosition]);
-};
-
-const GetRoute = async (start, end) => {
-  try {
-    const avoidPolygon = turf.buffer(turf.featureCollection(
-      redZones.map(([lat, lon]) => turf.point([lon, lat]))
-    ), 0.005, { units: 'kilometers' });
-
-    const res = await fetch(`https://api.openrouteservice.org/v2/directions/foot-walking`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'  // 👈 Make sure this is correctly set
-      },
-      body: JSON.stringify({
-        coordinates: [[start[1], start[0]], [end[1], end[0]]],
-        options: {
-          avoid_polygons: avoidPolygon
-        }
-      })
-    });
-
-    const data = await res.json();
-
-    if (!data.features || !data.features[0]) {
-      throw new Error("No route found. Check coordinates or API limits.");
-    }
-
-    return data.features[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-
-  } catch (error) {
-    console.error("Error fetching route:", error);
-    alert("Unable to fetch route. Try again with valid inputs.");
-    return [];
-  }
-};
-
 
 function SafeRouteMap() {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [route, setRoute] = useState([]);
   const [livePos, setLivePos] = useState(centerDelhi);
+  const [redZones, setRedZones] = useState([]);
 
-  useCurrentLocation(setLivePos);
+  // 🔔 Load dataset from CSV
+  useEffect(() => {
+    Papa.parse('/delhi_theft_data.csv', {
+      download: true,
+      header: true,
+      complete: (results) => {
+        const highCrimeZones = results.data
+          .filter(row => parseInt(row.Crime_Count) >= 25)
+          .map(row => [parseFloat(row.Latitude), parseFloat(row.Longitude)]);
+        setRedZones(highCrimeZones);
+      }
+    });
+  }, []);
+
+  // 📍 Get user's current location
+  useEffect(() => {
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setLivePos([latitude, longitude]);
+
+        // 🔔 Beep logic if close to any red zone
+        redZones.forEach(([lat, lon]) => {
+          const distance = turf.distance(
+            turf.point([lon, lat]),
+            turf.point([longitude, latitude]),
+            { units: 'kilometers' }
+          );
+          if (distance < 0.2) {
+            const audio = new Audio('/beep.mp3'); // Place `beep.mp3` in `public` folder
+            audio.play();
+          }
+        });
+      },
+      (err) => console.error(err),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [redZones]);
+
+  // 🧭 Route calculation
+  const GetRoute = async (start, end) => {
+    try {
+      const avoidPolygon = turf.buffer(turf.featureCollection(
+        redZones.map(([lat, lon]) => turf.point([lon, lat]))
+      ), 0.005, { units: 'kilometers' });
+
+      const res = await fetch(`https://api.openrouteservice.org/v2/directions/foot-walking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'
+        },
+        body: JSON.stringify({
+          coordinates: [[start[1], start[0]], [end[1], end[0]]],
+          options: {
+            avoid_polygons: avoidPolygon
+          }
+        })
+      });
+
+      const data = await res.json();
+
+      if (!data.features || !data.features[0]) throw new Error("No route found.");
+      return data.features[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+    } catch (error) {
+      console.error("Route Error:", error);
+      alert("Unable to fetch route.");
+      return [];
+    }
+  };
 
   const handleGetRoute = async () => {
     const locations = {
@@ -94,6 +107,7 @@ function SafeRouteMap() {
   return (
     <div>
       <h2>🚦 Safe Route Navigator - Delhi</h2>
+
       <label>Start:</label>
       <select value={start} onChange={(e) => setStart(e.target.value)}>
         <option value=''>Select</option>
@@ -120,12 +134,12 @@ function SafeRouteMap() {
           attribution='&copy; OpenStreetMap contributors'
         />
 
-        {redZones.map((pos, i) => (
-          <Marker key={i} position={pos} icon={redIcon} />
-        ))}
+        {/* 🔺 You can remove this marker if only using beep */}
+        {/* {redZones.map((pos, i) => (
+          <Marker key={i} position={pos} icon={redLeafletIcon} />
+        ))} */}
 
         {route.length > 0 && <Polyline positions={route} color='blue' />}
-
         {livePos && <Marker position={livePos} icon={L.divIcon({ className: 'live-pin', html: '📍', iconSize: [20, 20] })} />}
       </MapContainer>
     </div>
