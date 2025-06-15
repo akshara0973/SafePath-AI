@@ -11,27 +11,23 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import carImage from '../assets/car.jpg'; // Make sure this path is correct
 
-// 🚗 Car icon
 const carIcon = new L.Icon({
   iconUrl: carImage,
   iconSize: [40, 40],
   iconAnchor: [20, 40],
 });
 
-// 🛑 Unsafe zone: Mandi House
 const unsafeZones = [
   [28.6281, 77.2335], // Mandi House
 ];
 
-// 🔍 Check if car is near unsafe zone
 const isNearUnsafe = ([lat, lng]) => {
-  const threshold = 0.003; // ~300 meters
-  return unsafeZones.some(([ul, ulng]) => (
+  const threshold = 0.003;
+  return unsafeZones.some(([ul, ulng]) =>
     Math.abs(lat - ul) < threshold && Math.abs(lng - ulng) < threshold
-  ));
+  );
 };
 
-// 🎯 Adjust map view dynamically
 function MapUpdater({ route }) {
   const map = useMap();
   useEffect(() => {
@@ -42,7 +38,6 @@ function MapUpdater({ route }) {
   return null;
 }
 
-// 🔊 Beep on unsafe zone detection
 const beep = () => {
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const oscillator = ctx.createOscillator();
@@ -57,85 +52,69 @@ export default function SafeRouteMap() {
   const [source, setSource] = useState('');
   const [destination, setDestination] = useState('');
   const [route, setRoute] = useState([]);
+  const [reroutedRoute, setReroutedRoute] = useState([]);
   const [carPosition, setCarPosition] = useState(null);
   const [showAlert, setShowAlert] = useState(false);
 
-  const apiKey = '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912'; // Replace with your ORS key
+  const apiKey = '5b3ce3597851110001cf624815a3b2e0f4c2483aba8daae4cfa05912';
 
-  // 🔄 Convert place name to coordinates
   const getCoords = async (place) => {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${place}, Delhi`);
-      const data = await res.json();
-      return data[0] ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;
-    } catch (err) {
-      console.error("Error fetching coordinates:", err);
-      return null;
-    }
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${place}, Delhi`);
+    const data = await res.json();
+    return data[0] ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;
   };
 
-  // 🛣️ Fetch and display route
   const handleRoute = async () => {
+    setReroutedRoute([]);
     const src = await getCoords(source);
     const dest = await getCoords(destination);
-    if (!src || !dest) return alert("❌ Invalid source or destination");
+    if (!src || !dest) return alert("Enter valid locations");
 
     const body = {
       coordinates: [[src[1], src[0]], [dest[1], dest[0]]],
-      format: 'geojson'
+      format: 'geojson',
     };
 
-    try {
-      const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+    const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+      method: 'POST',
+      headers: {
+        'Authorization': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-      const data = await res.json();
-      if (data.features?.[0]) {
-        const coords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-        setRoute(coords);
-        setCarPosition(null); // reset car
-      } else {
-        alert("❌ No route found.");
-      }
-    } catch (err) {
-      console.error("Error fetching route:", err);
+    const data = await res.json();
+    if (data.features?.[0]) {
+      const coords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      setRoute(coords);
+      animateCar(coords, dest);
     }
   };
 
-  // 🚘 Animate car on the route
-  useEffect(() => {
-    if (route.length >= 2) {
-      let i = 0;
-      const intervalId = setInterval(() => {
-        if (i < route.length) {
-          const currentPos = route[i];
-          setCarPosition(currentPos);
+  const animateCar = (path, finalDestination) => {
+    let i = 0;
+    const intervalId = setInterval(() => {
+      if (i < path.length) {
+        const currentPos = path[i];
+        setCarPosition(currentPos);
 
-          if (isNearUnsafe(currentPos)) {
-            beep();
-            setShowAlert(true);
-            rerouteAvoidingUnsafe(route[0], route[route.length - 1]);
-            clearInterval(intervalId);
-            setTimeout(() => setShowAlert(false), 4000);
-          }
-
-          i++;
-        } else {
+        if (isNearUnsafe(currentPos)) {
+          beep();
+          setShowAlert(true);
           clearInterval(intervalId);
+
+          setTimeout(() => setShowAlert(false), 4000);
+          rerouteAvoidingUnsafe(currentPos, finalDestination); // ⬅️ Reroute from current position
         }
-      }, 300);
 
-      return () => clearInterval(intervalId);
-    }
-  }, [route]);
+        i++;
+      } else {
+        clearInterval(intervalId);
+      }
+    }, 300);
+  };
 
-  // 🔁 Avoid unsafe zones by rerouting
   const rerouteAvoidingUnsafe = async (start, end) => {
     const avoidPolygons = {
       type: "MultiPolygon",
@@ -154,31 +133,28 @@ export default function SafeRouteMap() {
       format: 'geojson'
     };
 
-    try {
-      const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+    const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+      method: 'POST',
+      headers: {
+        'Authorization': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-      const data = await res.json();
-      if (data.features?.[0]) {
-        const newCoords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-        setRoute(newCoords);
-      } else {
-        alert('❌ Reroute failed');
-      }
-    } catch (err) {
-      console.error("Error during reroute:", err);
+    const data = await res.json();
+    if (data.features?.[0]) {
+      const newCoords = data.features[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      setReroutedRoute(newCoords);
+      animateCar(newCoords, end); // ⬅️ Continue animation with rerouted path
+    } else {
+      alert('Reroute failed');
     }
   };
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* 🔍 Search Bar */}
+      {/* 🔍 Search */}
       <div style={{ marginBottom: 10 }}>
         <input
           value={source}
@@ -193,7 +169,7 @@ export default function SafeRouteMap() {
         <button onClick={handleRoute}>Show Route</button>
       </div>
 
-      {/* 🚨 Alert Popup */}
+      {/* 🚨 Alert */}
       {showAlert && (
         <div style={{
           position: 'absolute',
@@ -214,9 +190,9 @@ export default function SafeRouteMap() {
       {/* 🗺️ Map */}
       <MapContainer center={[28.61, 77.23]} zoom={13} style={{ height: '500px', width: '100%' }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapUpdater route={route} />
+        <MapUpdater route={route.length ? route : reroutedRoute} />
 
-        {/* 🔴 Unsafe Zone Circle */}
+        {/* 🔴 Unsafe Zones */}
         {unsafeZones.map((pos, i) => (
           <Circle
             key={i}
@@ -226,13 +202,12 @@ export default function SafeRouteMap() {
           />
         ))}
 
-        {/* 🔵 Route & 🚗 Car Marker */}
-        {route.length >= 2 && (
-          <>
-            <Polyline positions={route} color="blue" />
-            {carPosition && <Marker position={carPosition} icon={carIcon} />}
-          </>
-        )}
+        {/* 🔵 Route Lines */}
+        {route.length >= 2 && <Polyline positions={route} color="blue" />}
+        {reroutedRoute.length >= 2 && <Polyline positions={reroutedRoute} color="green" />}
+
+        {/* 🚘 Car Marker */}
+        {carPosition && <Marker position={carPosition} icon={carIcon} />}
       </MapContainer>
     </div>
   );
